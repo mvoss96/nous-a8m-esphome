@@ -1,0 +1,114 @@
+esphome:
+  platformio_options:
+    board_build.bkboot_version: "1.0.1-bk7231n"
+    board_flash.calibration: "0x1D0000+0x3000"
+    board_flash.net:          "0x1D3000+0x2000"
+    board_flash.kvs:          "0x1D5000+0x9000"
+    board_flash.userdata:     "0x1E3000+0x12000"
+    board_flash.tuya:         "0x1F5000+0xA000"
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: false
+  project:
+    name: "NOUS.Smart-Wifi-Socket"
+    version: "A8M"
+  on_boot:
+    priority: 200
+    then:
+      - if:
+          condition:
+            switch.is_on: relay
+          then:
+            - light.turn_on: led
+          else:
+            - light.turn_off: led
+
+bk72xx:
+  board: generic-bk7231n-qfn32-tuya
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Allow Over-The-Air updates
+ota:
+  - platform: esphome
+
+# Allow provisioning Wi-Fi via serial
+improv_serial:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap: {}
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+    id: my_time
+
+globals:
+  - id: total_energy
+    type: float
+    restore_value: true
+    initial_value: "0.0"
+
+light:
+  - platform: status_led
+    internal: True
+    name: "Switch state"
+    id: led
+    pin:
+      number: P8
+      inverted: true
+
+binary_sensor:
+  - platform: gpio
+    name: "push_button"
+    id: "push_button"
+    #internal: true
+    pin:
+      number: P7
+      inverted: yes
+      mode: INPUT_PULLUP
+    on_press:
+      - switch.toggle: "relay"
+
+switch:
+  - platform: gpio
+    pin: P6
+    id: relay
+    name: "Relay"
+    restore_mode: RESTORE_DEFAULT_OFF
+    icon: mdi:power
+    on_turn_on:
+      - light.turn_on: led
+    on_turn_off:
+      - light.turn_off: led
+
+sensor:
+  - platform: hlw8012
+    model: BL0937
+    current_resistor: 0.00112
+    voltage_divider: 768
+    sel_pin:
+      number: P14
+      inverted: True
+    cf_pin:
+      number: P24
+      inverted: True
+    cf1_pin:
+      number: P26
+      inverted: True
+    current:
+      name: "Current"
+    voltage:
+      name: "Voltage"
+    power:
+      name: "Power"
+    energy:
+      name: "Energy"
+    update_interval: 10s
