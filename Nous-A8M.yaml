@@ -1,3 +1,10 @@
+substitutions:
+  name: nous-a8m
+  friendly_name: Nous A8M
+  max_power: "2000"       # In Watt
+  current_res: "0.00126"  # Higher value gives lower watt readout
+  voltage_div: "1570"     # Lower value gives lower voltage readout
+
 esphome:
   platformio_options:
     board_build.bkboot_version: "1.0.1-bk7231n"

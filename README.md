@@ -65,10 +65,15 @@ ltchiptool write <port> bk7231n 0x0 bk7231n-1.0.1-encrypted-tuya.bin --length 0x
 
 ### Step 3 – Extract and patch the MAC address
 
-Use the provided script to extract the original MAC from the stock backup and generate a patch file:
+The original MAC is stored in the **userdata partition at `0x1E3024`** and survives both the
+bootloader replacement and the ESPHome flash as long as ESPHome was flashed with the correct
+`platformio_options` (which keep the KVS away from that region). This means the MAC can be
+extracted from **any dump** of the device, even after conversion.
+
+Use the provided script to extract the original MAC and generate a patch file:
 
 ```bash
-python scripts/extract_mac_patch.py stock_backup.bin
+python scripts/extract_mac_patch.py <your_dump.bin>
 ```
 
 This will output the original MAC and create `mac_patch_1D0000.bin`.
@@ -79,7 +84,7 @@ Flash the MAC patch:
 ltchiptool write <port> bk7231n 0x1D0000 mac_patch_1D0000.bin
 ```
 
-If you no longer have the stock backup, find the MAC in the **Tuya app** (Device Info) and use:
+If you have no dump at all, find the MAC in the **Nous app** (Device Info) and use:
 
 ```bash
 python scripts/generate_mac_patch.py F8:17:2D:D3:0A:40
@@ -94,17 +99,6 @@ Flash via UART:
 ```bash
 ltchiptool write <port> bk7231n 0x11000 firmware.uf2
 ```
-
-Or after the first successful UART flash, use **OTA** for all future updates.
-
-### Step 5 – Verify
-
-After booting, check the serial log or ESPHome dashboard to confirm:
-- Correct MAC address
-- WiFi connected
-- OTA working
-
----
 
 ## ESPHome Configuration
 
@@ -122,11 +116,6 @@ esphome:
     board_flash.userdata:     "0x1E3000+0x12000"
     board_flash.tuya:         "0x1F5000+0xA000"
 ```
-
-> ⚠️ Without these options, ESPHome will write its KVS partition over the userdata region,
-> destroying the original MAC address and causing WiFi issues.
-
----
 
 ## Scripts
 
@@ -146,13 +135,14 @@ If you have already flashed ESPHome **without** the correct `platformio_options`
 
 Fix:
 1. Add the `platformio_options` to your YAML and reflash via UART
-2. Patch the MAC using `generate_mac_patch.py` with the MAC from your Tuya app
-3. Flash the patch: `ltchiptool write <port> bk7231n 0x1D0000 mac_patch_1D0000.bin`
-
+2. Read the current flash to recover the MAC:
+   ```bash
+   ltchiptool read <port> bk7231n current.bin
+   python scripts/extract_mac_patch.py current.bin
+   ```
+   The original MAC should survive at `0x1E3024` even after conversion
 ---
 
 ## Credits
 
 - [kuba2k2](https://github.com/kuba2k2) – LibreTiny maintainer, diagnosed the bootloader issue
-- [dlushni](https://github.com/dlushni) – flash layout research
-- [mvoss96](https://github.com/mvoss96) – original issue reporter and further research
