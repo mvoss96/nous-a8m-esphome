@@ -7,12 +7,7 @@ substitutions:
 
 esphome:
   platformio_options:
-    board_build.bkboot_version: "1.0.1-bk7231n"
-    board_flash.calibration: "0x1D0000+0x3000"
-    board_flash.net:          "0x1D3000+0x2000"
-    board_flash.kvs:          "0x1D5000+0x9000"
-    board_flash.userdata:     "0x1E3000+0x12000"
-    board_flash.tuya:         "0x1F5000+0xA000"
+    board_flash.calibration: "0x1E3000+0x1000"
   name: ${name}
   friendly_name: ${friendly_name}
   name_add_mac_suffix: false

@@ -8,30 +8,29 @@
 
 ## The Problem
 
-The Nous A8M is a Matter-enabled smart plug using a **BK7231N** chip with Tuya bootloader **v3.0.0**.  
-LibreTiny only supports bootloader **v1.0.1**, which causes two issues after conversion:
+Nous A8M Plugs with matter support ship with a Tuya bootloader v3.0.0 instead of v1.0.1. This mismatch causes two practical issues observed during conversion attempts:
 
-1. **OTA updates appear successful but never apply** – the bootloader does not perform the partition swap.
-2. **Wrong MAC address** (`C8:47:8C:00:00:00`) after flashing – the v1.0.1 bootloader does not understand the v3.0 flash layout and cannot read the original MAC.
+1. OTA updates appear to succeed but never get applied — the v3.0 bootloader layout is incompatible with the runtime the v1.0.1-based flow expects, so the partition swap does not occur.
+2. Devices flashed without adjusting for the different layout show an incorrect MAC (example: `C8:47:8C:00:00:00`) because calibration/userdata TLVs were read from the wrong offsets.
 
-### Root Cause: Flash Layout
+## Solution
+- Flash the bkboot `1.0.1` bootloader to the device (required for proper OTA behavior). Example using `ltchiptool`:
 
-The v3.0 bootloader uses a different flash layout than what LibreTiny expects by default:
+```bash
+ltchiptool write <port> bk7231n 0x0 bk7231n-1.0.1-encrypted-tuya.bin --length 0x11000
+```
 
-| Partition    | Stock offset | Size     |
-|-------------|-------------|----------|
-| bootloader  | `0x000000`  | 64K      |
-| app         | `0x010000`  | ~1.5MB   |
-| calibration | `0x1D0000`  | `0x3000` |
-| net         | `0x1D3000`  | `0x2000` |
-| kvs         | `0x1D5000`  | `0x9000` |
-| userdata    | `0x1E3000`  | `0x12000`|
-| tuya        | `0x1F5000`  | `0xA000` |
+- Configure ESPHome to use the correct calibration offset. Add this to your YAML (`Nous-A8M.yaml`):
 
-The original MAC address is stored in the **userdata TLV** at `0x1E3024`.  
-After flashing the v1.0.1 bootloader, the calibration TLV at `0x1D0000` gets a default MAC of `C8:47:8C:00:00:00`.
+```yaml
+esphome:
+  platformio_options:
+    board_flash.calibration: "0x1E3000+0x1000"
+```
 
----
+## Deprecated:
+
+Previosly i thought i had to manually extract the MAC from the stock firmware and patch it into the ESPHome build. With the corrected calibration offset and the `generic-bk7231n-qfn32-tuya` board configuration, this is generally not necessary: flashing ESPHome over a stock firmware dump should preserve or restore the expected MAC behavior. The old scripts remain in `scripts/`s but are not required for the conversion.
 
 ## Prerequisites
 
@@ -42,6 +41,19 @@ After flashing the v1.0.1 bootloader, the calibration TLV at `0x1D0000` gets a d
 - The original MAC address of your device (from the Tuya app or by reading the stock flash)
 
 ---
+
+## Quick fix (minimal changes)
+
+If you want the shortest path to a working ESPHome build for the `generic-bk7231n-qfn32-tuya` board, update only the calibration offset in your YAML. This is the only `platformio_options` entry you generally need to change:
+
+```yaml
+esphome:
+  platformio_options:
+    board_flash.calibration: "0x1E3000+0x1000"
+```
+
+Flash the `bkboot 1.0.1` bootloader separately if you want OTA support; otherwise build and flash ESPHome as described below.
+
 
 ## Step-by-Step Guide
 
@@ -63,66 +75,37 @@ Download `bk7231n-1.0.1-encrypted-tuya.zip` from the LibreTiny releases and flas
 ltchiptool write <port> bk7231n 0x0 bk7231n-1.0.1-encrypted-tuya.bin --length 0x11000
 ```
 
-### Step 3 – Extract and patch the MAC address
+### Step 3 – MAC handling (usually not required)
 
-The original MAC is stored in the **userdata partition at `0x1E3024`** and survives both the
-bootloader replacement and the ESPHome flash as long as ESPHome was flashed with the correct
-`platformio_options` (which keep the KVS away from that region). This means the MAC can be
-extracted from **any dump** of the device, even after conversion.
+With the corrected calibration offset (`0x1E3000`) and the `generic-bk7231n-qfn32-tuya` board configuration, extracting and patching the MAC is generally not necessary: flashing ESPHome over a stock firmware dump should preserve or restore the expected MAC behavior.
 
-Use the provided script to extract the original MAC and generate a patch file:
+If you still need the original MAC for any reason, the old scripts remain in `scripts/` and can extract or build a MAC patch from a dump or a known MAC. These scripts are provided for legacy/edge cases and are not required for the standard conversion flow.
 
-```bash
-python scripts/extract_mac_patch.py <your_dump.bin>
-```
-
-This will output the original MAC and create `mac_patch_1D0000.bin`.
-
-Flash the MAC patch:
-
-```bash
-ltchiptool write <port> bk7231n 0x1D0000 mac_patch_1D0000.bin
-```
-
-If you have no dump at all, find the MAC in the **Nous app** (Device Info) and use:
-
-```bash
-python scripts/generate_mac_patch.py F8:17:2D:D3:0A:40
-```
 
 ### Step 4 – Flash ESPHome
 
-Build your ESPHome firmware using the provided `Nous-A8M.yaml` (adjust substitutions for each device).
-
-Flash via UART:
+Build your ESPHome firmware using the provided `Nous-A8M.yaml` (adjust substitutions for each device). Flash via UART as before:
 
 ```bash
 ltchiptool write <port> bk7231n 0x11000 firmware.uf2
 ```
 
+
 ## ESPHome Configuration
 
-See [`Nous-A8M.yaml`](Nous-A8M.yaml) for the full configuration.
-
-The critical part is the `platformio_options` section which tells LibreTiny the correct flash layout:
+See [`Nous-A8M.yaml`](Nous-A8M.yaml) for the full configuration. For the `generic-bk7231n-qfn32-tuya` board the only `platformio_options` entry you must change is the calibration offset. Add this to your YAML:
 
 ```yaml
 esphome:
   platformio_options:
-    board_build.bkboot_version: "1.0.1-bk7231n"
-    board_flash.calibration: "0x1D0000+0x3000"
-    board_flash.net:          "0x1D3000+0x2000"
-    board_flash.kvs:          "0x1D5000+0x9000"
-    board_flash.userdata:     "0x1E3000+0x12000"
-    board_flash.tuya:         "0x1F5000+0xA000"
+    board_flash.calibration: "0x1E3000+0x1000"
 ```
 
-## Scripts
+Notes:
 
-| Script | Description |
-|--------|-------------|
-| [`scripts/extract_mac_patch.py`](scripts/extract_mac_patch.py) | Extracts MAC from a stock dump and generates a patch file |
-| [`scripts/generate_mac_patch.py`](scripts/generate_mac_patch.py) | Generates a MAC patch from a manually specified MAC address |
+- `board_build.bkboot_version` is a build-time setting and does not replace the device bootloader; flashing the `1.0.1` bootloader must still be done separately if you require OTA support.
+- The BK7231N download/OTA offset commonly defaults to `0x12A000` and matches observed dumps.
+- `kvs` stores LibreTiny/ESPHome runtime configuration (e.g., last-used Wi‑Fi); for this board the default `kvs` location does not overlap with `0x1E3000`, so you normally do not need to modify it.
 
 ---
 
@@ -146,3 +129,14 @@ Fix:
 ## Credits
 
 - [kuba2k2](https://github.com/kuba2k2) – LibreTiny maintainer, diagnosed the bootloader issue
+
+---
+
+## Legacy tools
+
+These helper scripts are provided for edge cases where you must extract or patch a MAC from a full dump. For the normal conversion flow they are not required.
+
+| Script | Description |
+|--------|-------------|
+| [`scripts/extract_mac_patch.py`](scripts/extract_mac_patch.py) | Extracts MAC from a dump and generates a patch |
+| [`scripts/generate_mac_patch.py`](scripts/generate_mac_patch.py) | Generates a MAC patch from a provided MAC address |
